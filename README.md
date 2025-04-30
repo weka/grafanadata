@@ -5,7 +5,7 @@ Query the Grafana API based off dashboards and panels and return the data in eit
 ## Install
 
 ```bash
-go get github.com/mperkins808/grafanadata/go/pkg/grafanadata
+go get github.com/weka/grafanadata/go/pkg/grafanadata
 ```
 
 ## Example usage
@@ -17,7 +17,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/mperkins808/grafanadata/go/pkg/grafanadata"
+	"github.com/weka/grafanadata/go/pkg/grafanadata"
 )
 
 func main() {

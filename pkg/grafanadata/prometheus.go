@@ -34,9 +34,7 @@ func ConvertResultToPrometheusFormat(results Results) PrometheusMetricResponse {
 				}
 			}
 
-			if len(promResult.Values) > 0 {
-				promResponse.Data.Result = append(promResponse.Data.Result, promResult)
-			}
+			promResponse.Data.Result = append(promResponse.Data.Result, promResult)
 		}
 	}
 

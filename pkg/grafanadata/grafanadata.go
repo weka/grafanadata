@@ -22,6 +22,7 @@ type GrafanaClient interface {
 	FetchDashboards() ([]DashboardSearch, error)
 	FetchPanelsFromDashboard(dashboard GrafanaDashboardResponse) []PanelSearch
 	GetHost() string
+	SetVars(vars map[string]string)
 }
 
 // needed for unit tests
@@ -33,6 +34,12 @@ type grafanaClient struct {
 	baseURL *url.URL
 	token   string
 	client  HTTPClient
+	vars    map[string]string
+}
+
+// SetVars sets the variables for the Grafana client, so they can be used in the queries.
+func (c *grafanaClient) SetVars(vars map[string]string) {
+	c.vars = vars
 }
 
 // NewGrafanaClient creates a new Grafana Client with an API token and returns the GrafanaClient interface
@@ -105,20 +112,28 @@ func (c *grafanaClient) getDashboard(uid string) (GrafanaDashboardResponse, erro
 func (c *grafanaClient) getPanelData(panelID int, dashboard GrafanaDashboardResponse, start time.Time) (Results, error) {
 	var result Results
 
-	var targets []interface{}
-	for i := range dashboard.Dashboard.Panels {
-		p := dashboard.Dashboard.Panels[i]
-		if p.ID != panelID {
-			continue
-		}
-		targets = append(targets, p.Targets...)
+	panel := dashboard.GetPanelByID(panelID)
+	if panel == nil {
+		return result, fmt.Errorf("failed to find panel %v in dashboard %v", panelID, dashboard.Dashboard.ID)
 	}
 
 	endTime := time.Now().Unix() * int64(1000)
 	startTime := start.Unix() * int64(1000)
 
+	for i := range panel.Targets {
+		t := panel.Targets[i].(map[string]any)
+		if _, ok := t["datasource"]; !ok {
+			t["datasource"] = panel.Datasource
+		}
+		if expr, ok := t["expr"]; ok {
+			for k, v := range c.vars {
+				t["expr"] = strings.Replace(expr.(string), "$"+k, v, -1)
+			}
+		}
+	}
+
 	request := GrafanaDataQueryRequest{
-		Queries: targets,
+		Queries: panel.Targets,
 		From:    fmt.Sprint(startTime),
 		To:      fmt.Sprint(endTime),
 	}
@@ -148,6 +163,8 @@ func (c *grafanaClient) getPanelData(panelID int, dashboard GrafanaDashboardResp
 	if resp.StatusCode != http.StatusOK {
 		return result, fmt.Errorf(string(b))
 	}
+
+	fmt.Println(string(b))
 
 	err = json.Unmarshal(b, &result)
 

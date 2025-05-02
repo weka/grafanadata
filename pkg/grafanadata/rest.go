@@ -22,7 +22,10 @@ func (c *grafanaClient) NewRequest(method, endpoint string, body io.Reader) (*ht
 	}
 
 	// Set the Authorization header with the Bearer token
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", c.token))
+	if c.token != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", c.token))
+	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	return req, nil

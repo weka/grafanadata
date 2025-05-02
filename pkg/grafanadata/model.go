@@ -8,16 +8,33 @@ type GrafanaDashboardResponse struct {
 	Dashboard Dashboard `json:"dashboard"`
 }
 
+func (d *GrafanaDashboardResponse) GetPanelByID(id int) *Panel {
+	for _, panel := range d.Dashboard.Panels {
+		if panel.ID == id {
+			return &panel
+		}
+		if len(panel.Panels) > 0 {
+			for _, nestedPanel := range panel.Panels {
+				if nestedPanel.ID == id {
+					return &nestedPanel
+				}
+			}
+		}
+	}
+	return nil
+}
+
 type Dashboard struct {
 	ID     int     `json:"id"`
 	Panels []Panel `json:"panels"`
 }
 
 type Panel struct {
-	ID         int           `json:"id"`
-	Datasource Datasource    `json:"datasource"`
-	Targets    []interface{} `json:"targets"`
-	Title      string        `json:"title"`
+	ID         int        `json:"id"`
+	Datasource Datasource `json:"datasource"`
+	Targets    []any      `json:"targets"`
+	Title      string     `json:"title"`
+	Panels     []Panel    `json:"panels"` // for nested panels
 }
 
 type Datasource struct {

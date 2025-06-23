@@ -83,26 +83,28 @@ func (c *grafanaClient) getDashboard(uid string) (GrafanaDashboardResponse, erro
 
 	req, err := c.NewRequest(http.MethodGet, query, nil)
 	if err != nil {
-		return grafanaDashboardResponse, fmt.Errorf("failed to get dashboard %v with error %v", uid, err)
+		return grafanaDashboardResponse, fmt.Errorf("failed to get dashboard %v with error %w", uid, err)
 	}
 
 	resp, err := c.Do(req)
 	if err != nil {
-		return grafanaDashboardResponse, fmt.Errorf("failed to get dashboard %v with error %v", uid, err)
+		return grafanaDashboardResponse, fmt.Errorf("failed to get dashboard %v with error %w", uid, err)
 	}
+	defer resp.Body.Close()
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return grafanaDashboardResponse, fmt.Errorf("could not read response body with error %v", err)
+		return grafanaDashboardResponse, fmt.Errorf("could not read response body with error %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return grafanaDashboardResponse, fmt.Errorf("grafana returned status %v", resp.StatusCode)
+		return grafanaDashboardResponse, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode,
+			string(b))
 	}
 
 	err = json.Unmarshal(b, &grafanaDashboardResponse)
 	if err != nil {
-		return grafanaDashboardResponse, fmt.Errorf("could not unmarshal response %v", err)
+		return grafanaDashboardResponse, fmt.Errorf("could not unmarshal response %w", err)
 	}
 
 	return grafanaDashboardResponse, nil
@@ -140,31 +142,30 @@ func (c *grafanaClient) getPanelData(panelID int, dashboard GrafanaDashboardResp
 
 	b, err := json.Marshal(&request)
 	if err != nil {
-		return result, fmt.Errorf("failed to build request object %v", err)
+		return result, fmt.Errorf("failed to build request object: %w", err)
 	}
 
 	host := strings.TrimSuffix(c.baseURL.String(), "/")
 	query := fmt.Sprintf("%v/api/ds/query", host)
 	req, err := c.NewRequest(http.MethodPost, query, bytes.NewBuffer(b))
 	if err != nil {
-		return result, fmt.Errorf("failed to build request %v", err)
+		return result, fmt.Errorf("failed to build request %w", err)
 	}
 
 	resp, err := c.Do(req)
 	if err != nil {
 		return result, err
 	}
+	defer resp.Body.Close()
 
 	b, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("failed to read response body with error %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return result, fmt.Errorf(string(b))
+		return result, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode, string(b))
 	}
-
-	fmt.Println(string(b))
 
 	err = json.Unmarshal(b, &result)
 

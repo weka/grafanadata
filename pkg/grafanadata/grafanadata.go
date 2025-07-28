@@ -12,13 +12,19 @@ import (
 	"time"
 )
 
+// Range represents a time range with a start and end time.
+type Range struct {
+	Start time.Time
+	End   time.Time
+}
+
 // GrafanaClient interface defines the methods that our client will implement.
 type GrafanaClient interface {
 	SetToken(token string)
 	NewRequest(method, endpoint string, body io.Reader) (*http.Request, error)
 	Do(req *http.Request) (*http.Response, error)
 	GetDashboard(uid string) (GrafanaDashboardResponse, error)
-	GetPanelDataFromID(uid string, panelID int, start time.Time) (Results, error)
+	GetPanelDataFromID(uid string, panelID int, trange Range) (Results, error)
 	FetchDashboards() ([]DashboardSearch, error)
 	FetchPanelsFromDashboard(dashboard GrafanaDashboardResponse) []PanelSearch
 	GetHost() string
@@ -111,7 +117,7 @@ func (c *grafanaClient) getDashboard(uid string) (GrafanaDashboardResponse, erro
 }
 
 // retrieves the data for a panel in a dashboard.
-func (c *grafanaClient) getPanelData(panelID int, dashboard GrafanaDashboardResponse, start time.Time) (Results, error) {
+func (c *grafanaClient) getPanelData(panelID int, dashboard GrafanaDashboardResponse, trange Range) (Results, error) {
 	var result Results
 
 	panel := dashboard.GetPanelByID(panelID)
@@ -119,8 +125,11 @@ func (c *grafanaClient) getPanelData(panelID int, dashboard GrafanaDashboardResp
 		return result, fmt.Errorf("failed to find panel %v in dashboard %v", panelID, dashboard.Dashboard.ID)
 	}
 
+	startTime := trange.Start.Unix() * int64(1000)
 	endTime := time.Now().Unix() * int64(1000)
-	startTime := start.Unix() * int64(1000)
+	if !trange.End.IsZero() {
+		endTime = trange.End.Unix() * int64(1000)
+	}
 
 	for i := range panel.Targets {
 		t := panel.Targets[i].(map[string]any)
@@ -178,7 +187,7 @@ func (c *grafanaClient) GetDashboard(uid string) (GrafanaDashboardResponse, erro
 }
 
 // retrieves the panel data from an id
-func (c *grafanaClient) GetPanelDataFromID(uid string, panelID int, start time.Time) (Results, error) {
+func (c *grafanaClient) GetPanelDataFromID(uid string, panelID int, trange Range) (Results, error) {
 	var result Results
 
 	dashboard, err := c.getDashboard(uid)
@@ -186,12 +195,12 @@ func (c *grafanaClient) GetPanelDataFromID(uid string, panelID int, start time.T
 		return result, err
 	}
 
-	result, err = c.getPanelData(panelID, dashboard, start)
+	result, err = c.getPanelData(panelID, dashboard, trange)
 	return result, err
 }
 
 // retrieves the panel data from title
-func (c *grafanaClient) GetPanelDataFromTitle(uid string, title string, start time.Time) (Results, error) {
+func (c *grafanaClient) GetPanelDataFromTitle(uid string, title string, trange Range) (Results, error) {
 	var result Results
 
 	dashboard, err := c.getDashboard(uid)
@@ -204,7 +213,7 @@ func (c *grafanaClient) GetPanelDataFromTitle(uid string, title string, start ti
 		if p.Title != title {
 			continue
 		}
-		result, err = c.getPanelData(p.ID, dashboard, start)
+		result, err = c.getPanelData(p.ID, dashboard, trange)
 		return result, err
 	}
 	return result, fmt.Errorf("failed to find panel %v", title)

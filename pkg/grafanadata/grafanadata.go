@@ -97,7 +97,7 @@ type Client struct {
 }
 
 // NewGrafanaClient creates a new Grafana Client with an API token and returns the GrafanaClient interface
-func NewGrafanaClient(urlstr string, token string, opts ...ClientOption) (*Client, error) {
+func NewGrafanaClient(urlstr string, opts ...ClientOption) (*Client, error) {
 	parsed, err := url.Parse(urlstr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GrafanaClient. %v", err)
@@ -105,7 +105,6 @@ func NewGrafanaClient(urlstr string, token string, opts ...ClientOption) (*Clien
 
 	client := Client{
 		baseURL: parsed,
-		token:   token,
 		client:  &http.Client{},
 		log:     slog.Default(),
 	}

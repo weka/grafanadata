@@ -24,9 +24,15 @@ func (d *DashboardResponse) GetPanelByID(id int) *Panel {
 	return nil
 }
 
+type DashboardTime struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 type Dashboard struct {
-	ID     int     `json:"id"`
-	Panels []Panel `json:"panels"`
+	ID     int           `json:"id"`
+	Panels []Panel       `json:"panels"`
+	Time   DashboardTime `json:"time"`
 }
 
 type Panel struct {

@@ -204,12 +204,19 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 		Queries: panel.Targets,
 	}
 
-	if !options.timerange.Start.IsZero() {
+	if options.timerange.Start.IsZero() {
+		// use the dashboard's time range if not set
+		c.log.Debug("using dashboard time range for query", "dashboardID", dashboard.Dashboard.ID)
+		request.From = dashboard.Dashboard.Time.From
+	} else {
 		c.log.Debug("setting start time for query", "start", options.timerange.Start)
 		request.From = strconv.FormatInt(options.timerange.Start.Unix()*int64(1000), 10)
 	}
 
-	if !options.timerange.End.IsZero() {
+	if options.timerange.End.IsZero() {
+		c.log.Debug("using dashboard time range for query", "dashboardID", dashboard.Dashboard.ID)
+		request.To = dashboard.Dashboard.Time.To
+	} else {
 		c.log.Debug("setting end time for query", "end", options.timerange.End)
 		request.To = strconv.FormatInt(options.timerange.End.Unix()*int64(1000), 10)
 	}

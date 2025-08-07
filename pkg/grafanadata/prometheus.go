@@ -30,7 +30,9 @@ func ConvertResultToPrometheusFormat(results Results) PrometheusMetricResponse {
 				}
 			}
 
-			metricLabels["__legend__"] = legend
+			if legend != "" {
+				metricLabels["__legend__"] = legend
+			}
 
 			promResult.Metric = metricLabels
 			if len(frame.Data.Values) >= 2 {

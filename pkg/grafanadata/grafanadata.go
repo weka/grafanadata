@@ -214,8 +214,7 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 	}
 
 	if options.timerange.End.IsZero() {
-		c.log.Debug("using dashboard time range for query", "dashboardID", dashboard.Dashboard.ID)
-		request.To = dashboard.Dashboard.Time.To
+		request.To = "now"
 	} else {
 		c.log.Debug("setting end time for query", "end", options.timerange.End)
 		request.To = strconv.FormatInt(options.timerange.End.Unix()*int64(1000), 10)

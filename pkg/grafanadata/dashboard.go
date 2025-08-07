@@ -9,7 +9,7 @@ import (
 )
 
 // returns all the dashboards for a grafana instance
-func (c *grafanaClient) FetchDashboards() ([]DashboardSearch, error) {
+func (c *Client) FetchDashboards() ([]DashboardSearch, error) {
 	host := strings.TrimSuffix(c.baseURL.String(), "/")
 
 	q := fmt.Sprintf("%v/api/search?type=dash-db", host)
@@ -38,7 +38,7 @@ func (c *grafanaClient) FetchDashboards() ([]DashboardSearch, error) {
 }
 
 // returns all the panels for a dashboard
-func (c *grafanaClient) FetchPanelsFromDashboard(dashboard GrafanaDashboardResponse) []PanelSearch {
+func (c *Client) FetchPanelsFromDashboard(dashboard DashboardResponse) []PanelSearch {
 	var search []PanelSearch
 	for i := range dashboard.Dashboard.Panels {
 		p := dashboard.Dashboard.Panels[i]

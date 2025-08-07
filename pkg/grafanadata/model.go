@@ -4,11 +4,11 @@ package grafanadata
 // The important parts of a Grafana dashboard json
 //////////////////////////////////////////////////
 
-type GrafanaDashboardResponse struct {
+type DashboardResponse struct {
 	Dashboard Dashboard `json:"dashboard"`
 }
 
-func (d *GrafanaDashboardResponse) GetPanelByID(id int) *Panel {
+func (d *DashboardResponse) GetPanelByID(id int) *Panel {
 	for _, panel := range d.Dashboard.Panels {
 		if panel.ID == id {
 			return &panel
@@ -70,6 +70,8 @@ type Query struct {
 
 type Results struct {
 	Results map[string]Result `json:"results"`
+	Legends map[string]string `json:"-"`
+	c       *Client           // reference to the client to fetch legends
 }
 
 type Result struct {

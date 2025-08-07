@@ -3,6 +3,7 @@ package grafanadata
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,29 +36,27 @@ func CreateMockClient(t *testing.T, file string, expectedCode int) *MockHTTPClie
 	}
 }
 
-func CreateMockGrafanaClient(t *testing.T, mockClient *MockHTTPClient) *grafanaClient {
-	return &grafanaClient{
+func CreateMockGrafanaClient(t *testing.T, mockClient *MockHTTPClient) *Client {
+	return &Client{
 		baseURL: &url.URL{
 			Scheme: "http",
 			Host:   "example.com",
 		},
 		token:  "test_token",
 		client: mockClient,
+		log:    slog.Default(),
 	}
 
 }
 
 func TestCreateGrafanaClient(t *testing.T) {
-
 	_, err := NewGrafanaClient("foo", "bar")
 	if err != nil {
-		t.Fatalf("creating new grafana client error %v", err)
+		t.Fatalf("creating new grafana Client error %v", err)
 	}
-
 }
 
 func TestGetDashboard(t *testing.T) {
-
 	client := CreateMockClient(t, "dashboard.json", http.StatusOK)
 
 	g := CreateMockGrafanaClient(t, client)
@@ -97,7 +96,7 @@ func TestGetPanelData(t *testing.T) {
 
 	g = CreateMockGrafanaClient(t, client)
 
-	data, err := g.getPanelData(0, dashboard, time.Now())
+	data, err := g.getPanelData(2, dashboard, WithTimeRange(time.Now(), time.Time{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +122,6 @@ func TestExtractArgs(t *testing.T) {
 }
 
 func TestGetDashboards(t *testing.T) {
-
 	client := CreateMockClient(t, "search.json", http.StatusOK)
 
 	g := CreateMockGrafanaClient(t, client)

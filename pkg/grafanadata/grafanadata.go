@@ -173,7 +173,7 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 
 	c.log.Debug("got panel", "id", panelID, "panel", panel)
 
-	var legends map[string]string
+	legends := map[string]string{}
 	for i := range panel.Targets {
 		t := panel.Targets[i].(map[string]any)
 		if _, ok := t["datasource"]; !ok {

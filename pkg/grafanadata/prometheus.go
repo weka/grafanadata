@@ -1,6 +1,8 @@
 package grafanadata
 
-// Convert a Grafana data response into prometheus format
+import "strings"
+
+// ConvertResultToPrometheusFormat converts a Grafana data response into prometheus format
 func ConvertResultToPrometheusFormat(results Results) PrometheusMetricResponse {
 	promResponse := PrometheusMetricResponse{
 		Status: "success",
@@ -9,16 +11,27 @@ func ConvertResultToPrometheusFormat(results Results) PrometheusMetricResponse {
 		},
 	}
 
-	for _, result := range results.Results {
+	for ref, result := range results.Results {
 		for _, frame := range result.Frames {
-
 			var promResult PrometheusMetricDataResult
 
-			metricLabels := make(map[string]string)
+			metricLabels := map[string]string{
+				"__refId__": ref,
+			}
+
+			legend := results.Legends[ref]
+
 			for _, field := range frame.Schema.Fields {
 				for labelKey, labelValue := range field.Labels {
 					metricLabels[labelKey] = labelValue
+					if legend != "" {
+						legend = strings.ReplaceAll(legend, "{{"+labelKey+"}}", labelValue)
+					}
 				}
+			}
+
+			if legend != "" {
+				metricLabels["__legend__"] = legend
 			}
 
 			promResult.Metric = metricLabels

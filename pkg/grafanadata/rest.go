@@ -6,14 +6,14 @@ import (
 	"net/http"
 )
 
-// Calls the http client Do method
-func (c *grafanaClient) Do(req *http.Request) (*http.Response, error) {
+// Calls the http Client Do method
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	resp, err := c.client.Do(req)
 	return resp, err
 }
 
 // NewRequest creates a new HTTP request with the API token included in the headers.
-func (c *grafanaClient) NewRequest(method, endpoint string, body io.Reader) (*http.Request, error) {
+func (c *Client) NewRequest(method, endpoint string, body io.Reader) (*http.Request, error) {
 
 	// Create a new HTTP request
 	req, err := http.NewRequest(method, endpoint, body)

@@ -113,10 +113,11 @@ func WithLogger(logger Logger) ClientOption {
 
 // Client represents a Grafana client that can interact with the Grafana API.
 type Client struct {
-	baseURL *url.URL
-	token   string
-	client  HTTPClient
-	log     Logger
+	baseURL           *url.URL
+	token             string
+	client            HTTPClient
+	log               Logger
+	defaultDatasource Datasource
 }
 
 // NewGrafanaClient creates a new Grafana Client with an API token and returns the GrafanaClient interface
@@ -184,11 +185,6 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 
 	options := newPanelOptions(opts...)
 
-	datasource, err := c.getDefaultDatasource()
-	if err != nil {
-		return result, fmt.Errorf("failed to get default datasource: %w", err)
-	}
-
 	panel := dashboard.GetPanelByID(panelID)
 	if panel == nil {
 		return result, fmt.Errorf("failed to find panel %v in dashboard %v", panelID, dashboard.Dashboard.ID)
@@ -203,7 +199,12 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 			// if the target has no datasource, use the panel's datasource
 			if panel.Datasource.UID == "" {
 				c.log.Debug("panel has no datasource, using default datasource", "panelID", panelID, "panel", panel)
-				panel.Datasource = datasource
+				datasource, err := c.getDefaultDatasource()
+				if err != nil {
+					c.log.Warn("failed to get default datasource", "error", err)
+				} else {
+					panel.Datasource = datasource
+				}
 			}
 			c.log.Debug("target has no datasource, using panel datasource", "panelID", panelID, "target", t)
 			t["datasource"] = panel.Datasource
@@ -325,11 +326,6 @@ func (c *Client) GetPanelDataFromTitle(uid string, title string, opts ...PanelOp
 func (c *Client) GetDashboardVariables(response DashboardResponse, opts ...PanelOption) (map[string][]string, error) {
 	var result = make(map[string][]string)
 
-	datasource, err := c.getDefaultDatasource()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default datasource: %w", err)
-	}
-
 	options := newPanelOptions(opts...)
 
 	for _, tpl := range response.Dashboard.Templating.List {
@@ -350,8 +346,15 @@ func (c *Client) GetDashboardVariables(response DashboardResponse, opts ...Panel
 		}
 		if tpl.Datasource.UID == "" {
 			c.log.Debug("template has no datasource, using default datasource", "template", tpl)
-			tpl.Datasource = datasource
+
+			datasource, err := c.getDefaultDatasource()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get default datasource: %w", err)
+			} else {
+				tpl.Datasource = datasource
+			}
 		}
+
 		if strings.HasPrefix(query, "label_values(") {
 			// Handle label_values queries by calling Grafana's API
 			values, err := c.getLabelValues(tpl.Datasource.UID, query, options)
@@ -438,7 +441,9 @@ func (c *Client) getLabelValues(ds, query string, options panelOptions) ([]strin
 }
 
 func (c *Client) getDefaultDatasource() (Datasource, error) {
-	var datasource Datasource
+	if c.defaultDatasource.UID != "" {
+		return c.defaultDatasource, nil
+	}
 
 	// fetch default datasource using api
 	host := strings.TrimSuffix(c.baseURL.String(), "/")
@@ -448,40 +453,41 @@ func (c *Client) getDefaultDatasource() (Datasource, error) {
 
 	req, err := c.NewRequest(http.MethodGet, query, nil)
 	if err != nil {
-		return datasource, fmt.Errorf("failed to get datasources with error %w", err)
+		return c.defaultDatasource, fmt.Errorf("failed to get datasources with error %w", err)
 	}
 
 	resp, err := c.Do(req)
 	if err != nil {
-		return datasource, fmt.Errorf("failed to get datasources with error %w", err)
+		return c.defaultDatasource, fmt.Errorf("failed to get datasources with error %w", err)
 	}
 	defer resp.Body.Close()
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return datasource, fmt.Errorf("could not read response body with error %w", err)
+		return c.defaultDatasource, fmt.Errorf("could not read response body with error %w", err)
 	}
 
 	c.log.Debug("got datasources response", "status", resp.StatusCode, "body", string(b))
 
 	if resp.StatusCode != http.StatusOK {
-		return datasource, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode, string(b))
+		return c.defaultDatasource, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode, string(b))
 	}
 
 	var datasources []Datasource
 	err = json.Unmarshal(b, &datasources)
 	if err != nil {
-		return datasource, fmt.Errorf("could not unmarshal response %w", err)
+		return c.defaultDatasource, fmt.Errorf("could not unmarshal response %w", err)
 	}
 
 	// Find the default datasource
 	for _, ds := range datasources {
 		if ds.IsDefault {
-			return ds, nil
+			c.defaultDatasource = ds
+			break
 		}
 	}
 
-	return datasource, nil
+	return c.defaultDatasource, nil
 }
 
 // ExtractArgs returns the uid and panel id from a url

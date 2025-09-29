@@ -30,9 +30,21 @@ type DashboardTime struct {
 }
 
 type Dashboard struct {
-	ID     int           `json:"id"`
-	Panels []Panel       `json:"panels"`
-	Time   DashboardTime `json:"time"`
+	ID         int           `json:"id"`
+	Panels     []Panel       `json:"panels"`
+	Time       DashboardTime `json:"time"`
+	Templating struct {
+		List []struct {
+			Name       string     `json:"name"`
+			Type       string     `json:"type"`
+			Datasource Datasource `json:"datasource"`
+			Query      any        `json:"query"`
+			Current    struct {
+				Text  string `json:"text"`
+				Value any    `json:"value"`
+			} `json:"current"`
+		} `json:"list"`
+	} `json:"templating"`
 }
 
 type Panel struct {
@@ -44,8 +56,9 @@ type Panel struct {
 }
 
 type Datasource struct {
-	Type string `json:"type"`
-	UID  string `json:"uid"`
+	Type      string `json:"type"`
+	UID       string `json:"uid"`
+	IsDefault bool   `json:"isDefault,omitempty"`
 }
 
 type Target struct {

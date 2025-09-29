@@ -37,6 +37,22 @@ type panelOptions struct {
 	variables map[string]string
 }
 
+func (o *panelOptions) applyVariables(s string) string {
+	for k, v := range o.variables {
+		s = strings.ReplaceAll(s, "$"+k, v)
+	}
+
+	return s
+}
+
+func newPanelOptions(opts ...PanelOption) panelOptions {
+	var options panelOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	return options
+}
+
 // WithTimeRange sets the time range for the panel data query.
 func WithTimeRange(start, end time.Time) func(*panelOptions) {
 	return func(o *panelOptions) {
@@ -59,6 +75,7 @@ type GrafanaClient interface {
 	NewRequest(method, endpoint string, body io.Reader) (*http.Request, error)
 	Do(req *http.Request) (*http.Response, error)
 	GetDashboard(uid string) (DashboardResponse, error)
+	GetDashboardVariables(response DashboardResponse, opts ...PanelOption) (map[string][]string, error)
 	GetPanelDataFromID(uid string, panelID int, opts ...PanelOption) (Results, error)
 	FetchDashboards() ([]DashboardSearch, error)
 	FetchPanelsFromDashboard(dashboard DashboardResponse) []PanelSearch
@@ -96,10 +113,11 @@ func WithLogger(logger Logger) ClientOption {
 
 // Client represents a Grafana client that can interact with the Grafana API.
 type Client struct {
-	baseURL *url.URL
-	token   string
-	client  HTTPClient
-	log     Logger
+	baseURL           *url.URL
+	token             string
+	client            HTTPClient
+	log               Logger
+	defaultDatasource Datasource
 }
 
 // NewGrafanaClient creates a new Grafana Client with an API token and returns the GrafanaClient interface
@@ -163,14 +181,9 @@ func (c *Client) getDashboard(uid string) (DashboardResponse, error) {
 
 // retrieves the data for a panel in a dashboard.
 func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...PanelOption) (Results, error) {
-	var (
-		result  Results
-		options panelOptions
-	)
+	var result Results
 
-	for _, opt := range opts {
-		opt(&options)
-	}
+	options := newPanelOptions(opts...)
 
 	panel := dashboard.GetPanelByID(panelID)
 	if panel == nil {
@@ -183,21 +196,28 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 	for i := range panel.Targets {
 		t := panel.Targets[i].(map[string]any)
 		if _, ok := t["datasource"]; !ok {
+			// if the target has no datasource, use the panel's datasource
+			if panel.Datasource.UID == "" {
+				c.log.Debug("panel has no datasource, using default datasource", "panelID", panelID, "panel", panel)
+				datasource, err := c.getDefaultDatasource()
+				if err != nil {
+					c.log.Warn("failed to get default datasource", "error", err)
+				} else {
+					panel.Datasource = datasource
+				}
+			}
 			c.log.Debug("target has no datasource, using panel datasource", "panelID", panelID, "target", t)
 			t["datasource"] = panel.Datasource
 		}
 		if expr, ok := t["expr"].(string); ok {
 			c.log.Debug("applying variables for target", "panelID", panelID,
 				"target", t, "expr", expr, "variables", options.variables)
-			for k, v := range options.variables {
-				expr = strings.ReplaceAll(expr, "$"+k, v)
-			}
-			t["expr"] = expr
+			t["expr"] = options.applyVariables(expr)
 		}
 		if legend, ok := t["legendFormat"].(string); ok && legend != "__auto" {
 			if ref, ok := t["refId"].(string); ok {
 				c.log.Debug("adding legend for target", "panelID", panelID, "target", t, "legend", legend)
-				legends[ref] = legend
+				legends[ref] = options.applyVariables(legend)
 			} else {
 				c.log.Warn("target has no refId, cannot set legend", "panelID", panelID,
 					"target", t, "legend", legend)
@@ -301,6 +321,173 @@ func (c *Client) GetPanelDataFromTitle(uid string, title string, opts ...PanelOp
 	}
 
 	return result, fmt.Errorf("failed to find panel %v", title)
+}
+
+func (c *Client) GetDashboardVariables(response DashboardResponse, opts ...PanelOption) (map[string][]string, error) {
+	var result = make(map[string][]string)
+
+	options := newPanelOptions(opts...)
+
+	for _, tpl := range response.Dashboard.Templating.List {
+		if tpl.Type != "query" {
+			continue
+		}
+
+		queryMap, ok := tpl.Query.(map[string]any)
+		if !ok {
+			c.log.Warn("failed to convert query to map", "tpl", tpl)
+			continue
+		}
+
+		query, ok := queryMap["query"].(string)
+		if !ok {
+			c.log.Warn("failed to get query", "queryMap", queryMap)
+			continue
+		}
+		if tpl.Datasource.UID == "" {
+			c.log.Debug("template has no datasource, using default datasource", "template", tpl)
+
+			datasource, err := c.getDefaultDatasource()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get default datasource: %w", err)
+			} else {
+				tpl.Datasource = datasource
+			}
+		}
+
+		if strings.HasPrefix(query, "label_values(") {
+			// Handle label_values queries by calling Grafana's API
+			values, err := c.getLabelValues(tpl.Datasource.UID, query, options)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get label values for variable %s: %w", tpl.Name, err)
+			}
+			result[tpl.Name] = values
+			// for each value add new variable so that it can be used in queries, if not set
+			if options.variables[tpl.Name] == "" {
+				options.variables[tpl.Name] = strings.Join(values, "|")
+			}
+		} else {
+			// For other query types, you might want to handle them differently
+			c.log.Warn("unhandled query type", "tpl", tpl)
+		}
+	}
+
+	return result, nil
+}
+
+// getLabelValues queries Grafana's label values API for label_values() queries
+func (c *Client) getLabelValues(ds, query string, options panelOptions) ([]string, error) {
+	// Extract metric and label from label_values(metric, label) format
+	query = strings.TrimPrefix(query, "label_values(")
+	query = strings.TrimSuffix(query, ")")
+
+	parts := strings.Split(query, ",")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid label_values query format: %s", query)
+	}
+	if len(parts) != 2 {
+		// Handle case where metric contains commas
+		// Join all but the last part as the metric
+		parts = []string{strings.Join(parts[:len(parts)-1], ","), parts[len(parts)-1]}
+	}
+
+	metric := options.applyVariables(strings.TrimSpace(parts[0]))
+	label := strings.TrimSpace(parts[1])
+
+	host := strings.TrimSuffix(c.baseURL.String(), "/")
+	endpoint := fmt.Sprintf("%s/api/datasources/uid/%s/resources/"+
+		"api/v1/label/%s/values?match[]=%s&start=%d",
+		host, ds, label, url.QueryEscape(metric), options.timerange.Start.Unix())
+	if !options.timerange.End.IsZero() {
+		endpoint += fmt.Sprintf("&end=%d", options.timerange.End.Unix())
+	}
+
+	c.log.Debug("getting label values", "endpoint", endpoint, "metric", metric, "label", label)
+
+	req, err := c.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("grafana returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var labelResponse struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &labelResponse); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if labelResponse.Status != "success" {
+		return nil, fmt.Errorf("grafana API returned status: %s", labelResponse.Status)
+	}
+
+	return labelResponse.Data, nil
+}
+
+func (c *Client) getDefaultDatasource() (Datasource, error) {
+	if c.defaultDatasource.UID != "" {
+		return c.defaultDatasource, nil
+	}
+
+	// fetch default datasource using api
+	host := strings.TrimSuffix(c.baseURL.String(), "/")
+	query := fmt.Sprintf("%v/api/datasources", host)
+
+	c.log.Debug("getting default datasource", "host", host, "query", query)
+
+	req, err := c.NewRequest(http.MethodGet, query, nil)
+	if err != nil {
+		return c.defaultDatasource, fmt.Errorf("failed to get datasources with error %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return c.defaultDatasource, fmt.Errorf("failed to get datasources with error %w", err)
+	}
+	defer resp.Body.Close()
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.defaultDatasource, fmt.Errorf("could not read response body with error %w", err)
+	}
+
+	c.log.Debug("got datasources response", "status", resp.StatusCode, "body", string(b))
+
+	if resp.StatusCode != http.StatusOK {
+		return c.defaultDatasource, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode, string(b))
+	}
+
+	var datasources []Datasource
+	err = json.Unmarshal(b, &datasources)
+	if err != nil {
+		return c.defaultDatasource, fmt.Errorf("could not unmarshal response %w", err)
+	}
+
+	// Find the default datasource
+	for _, ds := range datasources {
+		if ds.IsDefault {
+			c.defaultDatasource = ds
+			break
+		}
+	}
+
+	return c.defaultDatasource, nil
 }
 
 // ExtractArgs returns the uid and panel id from a url

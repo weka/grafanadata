@@ -16,6 +16,12 @@ import (
 var _ GrafanaClient = (*Client)(nil)
 var _ Logger = (*slog.Logger)(nil)
 
+// defaultMaxDataPoints is the default number of data points for panel queries.
+// This matches the typical Grafana UI panel width (~1000 pixels) and ensures
+// that Grafana resolves $__interval and $__rate_interval consistently with
+// what users see in the Grafana dashboard.
+const defaultMaxDataPoints = 1000
+
 // Logger interface defines the logging methods used by the Grafana client.
 // Compatible with the standard library's slog package.
 type Logger interface {
@@ -179,6 +185,47 @@ func (c *Client) getDashboard(uid string) (DashboardResponse, error) {
 	return response, nil
 }
 
+// defaultIntervalMs is the fallback minimum interval (1 minute) used when a panel
+// has an interval configured but it cannot be parsed.
+const defaultIntervalMs = 60000
+
+// parseIntervalMs parses a Grafana interval string (e.g. "1m", "5m", "30s", "2h")
+// and returns the equivalent value in milliseconds.
+// Returns 0 if the interval string is empty (panel has no interval configured).
+// Returns defaultIntervalMs if the interval is non-empty but cannot be parsed,
+// to avoid silently dropping the panel's intended minimum interval.
+func parseIntervalMs(interval string) int {
+	if interval == "" {
+		return 0
+	}
+
+	interval = strings.TrimSpace(interval)
+	if len(interval) < 2 {
+		return defaultIntervalMs
+	}
+
+	unit := interval[len(interval)-1]
+	valueStr := interval[:len(interval)-1]
+
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return defaultIntervalMs
+	}
+
+	switch unit {
+	case 's':
+		return value * 1000
+	case 'm':
+		return value * 60 * 1000
+	case 'h':
+		return value * 60 * 60 * 1000
+	case 'd':
+		return value * 24 * 60 * 60 * 1000
+	default:
+		return defaultIntervalMs
+	}
+}
+
 // retrieves the data for a panel in a dashboard.
 func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...PanelOption) (Results, error) {
 	var result Results
@@ -191,6 +238,23 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 	}
 
 	c.log.Debug("got panel", "id", panelID, "panel", panel)
+
+	// Determine maxDataPoints: use panel-level value if set, otherwise use default.
+	maxDataPoints := defaultMaxDataPoints
+	if panel.MaxDataPoints != nil {
+		maxDataPoints = *panel.MaxDataPoints
+	}
+
+	// Parse the panel's minimum interval (e.g. "1m") to milliseconds for Grafana's
+	// $__interval and $__rate_interval resolution.
+	intervalMs := parseIntervalMs(panel.Interval)
+	if panel.Interval != "" && intervalMs == defaultIntervalMs {
+		c.log.Warn("could not parse panel interval, using default",
+			"panelID", panelID, "interval", panel.Interval, "defaultIntervalMs", defaultIntervalMs)
+	}
+
+	c.log.Debug("panel query settings", "panelID", panelID,
+		"maxDataPoints", maxDataPoints, "interval", panel.Interval, "intervalMs", intervalMs)
 
 	legends := map[string]string{}
 	for i := range panel.Targets {
@@ -221,6 +285,17 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 			} else {
 				c.log.Warn("target has no refId, cannot set legend", "panelID", panelID,
 					"target", t, "legend", legend)
+			}
+		}
+
+		// Inject maxDataPoints and intervalMs into each target so that Grafana resolves
+		// $__interval, $__rate_interval, and $__range identically to the dashboard UI.
+		if _, ok := t["maxDataPoints"]; !ok {
+			t["maxDataPoints"] = maxDataPoints
+		}
+		if intervalMs > 0 {
+			if _, ok := t["intervalMs"]; !ok {
+				t["intervalMs"] = intervalMs
 			}
 		}
 	}

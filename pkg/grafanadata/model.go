@@ -40,8 +40,8 @@ type Dashboard struct {
 			Datasource Datasource `json:"datasource"`
 			Query      any        `json:"query"`
 			Current    struct {
-				Text  string `json:"text"`
-				Value any    `json:"value"`
+				Text  any `json:"text"`
+				Value any `json:"value"`
 			} `json:"current"`
 		} `json:"list"`
 	} `json:"templating"`
@@ -53,8 +53,8 @@ type Panel struct {
 	Targets       []any      `json:"targets"`
 	Title         string     `json:"title"`
 	Panels        []Panel    `json:"panels"`        // for nested panels
-	Interval      string     `json:"interval"`       // minimum query interval, e.g. "1m", "5m"
-	MaxDataPoints *int       `json:"maxDataPoints"`  // max data points for the panel query
+	Interval      string     `json:"interval"`      // minimum query interval, e.g. "1m", "5m"
+	MaxDataPoints *int       `json:"maxDataPoints"` // max data points for the panel query
 }
 
 type Datasource struct {

@@ -48,13 +48,13 @@ type Dashboard struct {
 }
 
 type Panel struct {
-	ID            int        `json:"id"`
-	Datasource    Datasource `json:"datasource"`
-	Targets       []any      `json:"targets"`
-	Title         string     `json:"title"`
-	Panels        []Panel    `json:"panels"`        // for nested panels
-	Interval      string     `json:"interval"`      // minimum query interval, e.g. "1m", "5m"
-	MaxDataPoints *int       `json:"maxDataPoints"` // max data points for the panel query
+	ID            int         `json:"id"`
+	Datasource    Datasource  `json:"datasource"`
+	Targets       []any       `json:"targets"`
+	Title         string      `json:"title"`
+	Panels        []Panel     `json:"panels"`        // for nested panels
+	Interval      string      `json:"interval"`      // minimum query interval, e.g. "1m", "5m"
+	MaxDataPoints *int        `json:"maxDataPoints"` // max data points for the panel query
 	FieldConfig   FieldConfig `json:"fieldConfig"`
 }
 

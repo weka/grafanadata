@@ -40,27 +40,36 @@ type Dashboard struct {
 			Datasource Datasource `json:"datasource"`
 			Query      any        `json:"query"`
 			Current    struct {
-				Text  string `json:"text"`
-				Value any    `json:"value"`
+				Text  any `json:"text"`
+				Value any `json:"value"`
 			} `json:"current"`
 		} `json:"list"`
 	} `json:"templating"`
 }
 
 type Panel struct {
-	ID            int        `json:"id"`
-	Datasource    Datasource `json:"datasource"`
-	Targets       []any      `json:"targets"`
-	Title         string     `json:"title"`
-	Panels        []Panel    `json:"panels"`        // for nested panels
-	Interval      string     `json:"interval"`       // minimum query interval, e.g. "1m", "5m"
-	MaxDataPoints *int       `json:"maxDataPoints"`  // max data points for the panel query
+	ID            int         `json:"id"`
+	Datasource    Datasource  `json:"datasource"`
+	Targets       []any       `json:"targets"`
+	Title         string      `json:"title"`
+	Panels        []Panel     `json:"panels"`        // for nested panels
+	Interval      string      `json:"interval"`      // minimum query interval, e.g. "1m", "5m"
+	MaxDataPoints *int        `json:"maxDataPoints"` // max data points for the panel query
+	FieldConfig   FieldConfig `json:"fieldConfig"`
 }
 
 type Datasource struct {
 	Type      string `json:"type"`
 	UID       string `json:"uid"`
 	IsDefault bool   `json:"isDefault,omitempty"`
+}
+
+type FieldConfig struct {
+	Defaults FieldDefaults `json:"defaults"`
+}
+
+type FieldDefaults struct {
+	Unit string `json:"unit"`
 }
 
 type Target struct {

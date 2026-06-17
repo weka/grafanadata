@@ -29,7 +29,7 @@ func (c *Client) FetchDashboards() ([]DashboardSearch, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("grafana response %v. %v", resp.StatusCode, string(body))
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var search []DashboardSearch

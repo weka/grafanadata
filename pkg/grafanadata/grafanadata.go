@@ -173,8 +173,7 @@ func (c *Client) getDashboard(uid string) (DashboardResponse, error) {
 	c.log.Debug("got dashboard response", "status", resp.StatusCode, "body", string(b))
 
 	if resp.StatusCode != http.StatusOK {
-		return response, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode,
-			string(b))
+		return response, &HTTPError{StatusCode: resp.StatusCode, Body: string(b)}
 	}
 
 	err = json.Unmarshal(b, &response)
@@ -346,7 +345,7 @@ func (c *Client) getPanelData(panelID int, dashboard DashboardResponse, opts ...
 	c.log.Debug("got panel data response", "status", resp.StatusCode, "body", string(b))
 
 	if resp.StatusCode != http.StatusOK {
-		return result, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode, string(b))
+		return result, &HTTPError{StatusCode: resp.StatusCode, Body: string(b)}
 	}
 
 	err = json.Unmarshal(b, &result)
@@ -490,13 +489,13 @@ func (c *Client) getLabelValues(ds, query string, options panelOptions) ([]strin
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("grafana returned status %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var labelResponse struct {
@@ -545,7 +544,7 @@ func (c *Client) getDefaultDatasource() (Datasource, error) {
 	c.log.Debug("got datasources response", "status", resp.StatusCode, "body", string(b))
 
 	if resp.StatusCode != http.StatusOK {
-		return c.defaultDatasource, fmt.Errorf("grafana returned status %v; body: %s", resp.StatusCode, string(b))
+		return c.defaultDatasource, &HTTPError{StatusCode: resp.StatusCode, Body: string(b)}
 	}
 
 	var datasources []Datasource

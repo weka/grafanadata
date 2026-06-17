@@ -1,5 +1,18 @@
 package grafanadata
 
+import "fmt"
+
+// HTTPError is returned when the Grafana API responds with a non-200 status code.
+// Callers can use errors.As to extract the status code and mirror it upstream.
+type HTTPError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("grafana returned status %d; body: %s", e.StatusCode, e.Body)
+}
+
 //////////////////////////////////////////////////
 // The important parts of a Grafana dashboard json
 //////////////////////////////////////////////////
